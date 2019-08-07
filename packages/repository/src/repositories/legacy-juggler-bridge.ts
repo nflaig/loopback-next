@@ -28,6 +28,7 @@ import {
   HasManyRepositoryFactory,
   HasOneDefinition,
   HasOneRepositoryFactory,
+  InclusionResolver,
 } from '../relations';
 import {IsolationLevel, Transaction} from '../transaction';
 import {isTypeResolver, resolveType} from '../type-resolver';
@@ -100,6 +101,8 @@ export class DefaultCrudRepository<
 > implements EntityCrudRepository<T, ID, Relations> {
   modelClass: juggler.PersistedModelClass;
 
+  public inclusionResolvers: Map<string, InclusionResolver>;
+
   /**
    * Constructor of DefaultCrudRepository
    * @param entityClass - Legacy entity class
@@ -121,6 +124,7 @@ export class DefaultCrudRepository<
     );
 
     this.modelClass = this.definePersistedModel(entityClass);
+    this.inclusionResolvers = new Map<string, InclusionResolver>();
   }
 
   // Create an internal legacy Model attached to the datasource

@@ -17,6 +17,7 @@ import {DataSource} from '../datasource';
 import {EntityNotFoundError} from '../errors';
 import {Entity, Model, ValueObject} from '../model';
 import {Filter, Where} from '../query';
+import {InclusionResolver} from '../relations/relation.types';
 import {IsolationLevel, Transaction} from '../transaction';
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -143,6 +144,7 @@ export interface EntityCrudRepository<
 > extends EntityRepository<T, ID>, CrudRepository<T, Relations> {
   // entityClass should have type "typeof T", but that's not supported by TSC
   entityClass: typeof Entity & {prototype: T};
+  inclusionResolvers: Map<string, InclusionResolver>;
 
   /**
    * Save an entity. If no id is present, create a new entity
@@ -249,6 +251,7 @@ export interface EntityCrudRepository<
 export class CrudRepositoryImpl<T extends Entity, ID>
   implements EntityCrudRepository<T, ID> {
   private connector: CrudConnector;
+  public inclusionResolvers: Map<string, InclusionResolver>;
 
   constructor(
     public dataSource: DataSource,
@@ -256,6 +259,7 @@ export class CrudRepositoryImpl<T extends Entity, ID>
     public entityClass: typeof Entity & {prototype: T},
   ) {
     this.connector = dataSource.connector as CrudConnector;
+    this.inclusionResolvers = new Map<string, InclusionResolver>();
   }
 
   private toModels(data: Promise<DataObject<Entity>[]>): Promise<T[]> {
