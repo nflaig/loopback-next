@@ -3,7 +3,7 @@
 // This file is licensed under the MIT License.
 // License text available at https://opensource.org/licenses/MIT
 
-import {Binding, BindingAddress, Constructor} from '@loopback/context';
+import {Binding, BindingAddress, Constructor, Context} from '@loopback/context';
 import {Application, ApplicationConfig, Server} from '@loopback/core';
 import {OpenApiSpec, OperationObject} from '@loopback/openapi-v3';
 import {PathParams} from 'express-serve-static-core';
@@ -68,8 +68,8 @@ export class RestApplication extends Application implements HttpServerLike {
     return this.restServer.requestHandler;
   }
 
-  constructor(config: ApplicationConfig = {}) {
-    super(config);
+  constructor(options?: ApplicationConfig | Context, parent?: Context) {
+    super(options, parent);
     this.component(RestComponent);
   }
 

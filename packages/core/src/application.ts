@@ -32,8 +32,13 @@ const debug = debugFactory('loopback:core:application');
  * and models.
  */
 export class Application extends Context implements LifeCycleObserver {
-  constructor(public options: ApplicationConfig = {}) {
-    super('application');
+  public readonly options: ApplicationConfig;
+
+  constructor(options?: ApplicationConfig | Context, parent?: Context) {
+    super(options instanceof Context ? options : parent, 'application');
+
+    if (options instanceof Context) options = {};
+    this.options = options || {};
 
     // Bind the life cycle observer registry
     this.bind(CoreBindings.LIFE_CYCLE_OBSERVER_REGISTRY)
