@@ -18,7 +18,13 @@ import {
 import * as debugFactory from 'debug';
 import {getAuthorizeMetadata} from './decorators/authorize';
 import {AuthorizationTags} from './keys';
-import {AuthorizationContext, AuthorizationDecision, Authorizer} from './types';
+import {
+  AuthorizationContext,
+  AuthorizationDecision,
+  Authorizer,
+  AuthorizationError,
+} from './types';
+import {AuthenticationBindings} from '@loopback/authentication';
 
 const debug = debugFactory('loopback:authorization:interceptor');
 
@@ -41,12 +47,19 @@ export class AuthorizationInterceptor implements Provider<Interceptor> {
     );
     if (!metadata) {
       debug('No authorization metadata is found %s', description);
-      return await next();
+      const result = await next();
+      return result;
     }
     debug('Authorization metadata for %s', description, metadata);
-    const user = await invocationCtx.get<{name: string}>('current.user', {
-      optional: true,
-    });
+
+    // retrieve it from authentication module
+    const user = await invocationCtx.get<{name: string}>(
+      AuthenticationBindings.CURRENT_USER,
+      {
+        optional: true,
+      },
+    );
+
     debug('Current user', user);
     const authorizationCtx: AuthorizationContext = {
       principals: user ? [{name: user.name, type: 'USER'}] : [],
@@ -55,19 +68,27 @@ export class AuthorizationInterceptor implements Provider<Interceptor> {
       resource: invocationCtx.targetName,
       invocationContext: invocationCtx,
     };
+
     debug('Security context for %s', description, authorizationCtx);
     let authorizers = await loadAuthorizers(
       invocationCtx,
       metadata.voters || [],
     );
+
+    // pass `currentUser` to authorizers
+    Object.assign(metadata, {currentUser: user});
     authorizers = authorizers.concat(this.authorizers);
     for (const fn of authorizers) {
       const decision = await fn(authorizationCtx, metadata);
+      // we can add another interceptor to process the error
       if (decision === AuthorizationDecision.DENY) {
-        throw new Error('Access denied');
+        const error = new AuthorizationError('Access denied');
+        error.statusCode = 401;
+        throw error;
       }
     }
-    return await next();
+    const result = await next();
+    return result;
   }
 }
 

@@ -27,6 +27,7 @@
   "devDependencies": {
     "@loopback/build": "^2.0.3",
     "@loopback/testlab": "^1.6.3",
+    "@loopback/authentication": "^2.1.8",
     "@types/debug": "^4.1.4",
     "casbin": "^3.0.1"
   },
