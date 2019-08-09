@@ -97,7 +97,7 @@ export async function includeRelatedModels<
   }
 
   const resolveTasks = include.map(async i => {
-    const relationName = i.relation!;
+    const relationName = i.relation;
     const resolver = targetRepository.inclusionResolvers.get(relationName)!;
     const targets = await resolver(entities, i, options);
 

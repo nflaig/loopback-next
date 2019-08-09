@@ -3,7 +3,7 @@
 // This file is licensed under the MIT License.
 // License text available at https://opensource.org/licenses/MIT
 
-import {expect} from '@loopback/testlab';
+import {expect, toJSON} from '@loopback/testlab';
 import {
   DefaultCrudRepository,
   findByForeignKeys,
@@ -12,7 +12,14 @@ import {
 } from '../../..';
 import {model, property} from '../../../decorators';
 import {Entity} from '../../../model';
-import {Getter, hasMany, HasManyRepositoryFactory} from '../../../relations';
+import {
+  belongsTo,
+  BelongsToAccessor,
+  Getter,
+  hasMany,
+  HasManyRepositoryFactory,
+  InclusionResolver,
+} from '../../../relations';
 
 describe('relation helpers', () => {
   describe('findByForeignKeys', () => {
@@ -169,6 +176,41 @@ describe('relation helpers', () => {
         'Invalid "filter.include" entries: {"relation":"product"}',
       );
     });
+
+    it('includes related model', async () => {
+      const category = await categoryRepo.create({name: 'category'});
+      const product = await productRepo.create({
+        name: 'product',
+        categoryId: category.id,
+      });
+      const resolver: InclusionResolver = async entities => {
+        const categories: Category[] = [];
+
+        for (const entity of entities) {
+          const p = entity as Product;
+          const c = await categoryRepo.findById(p.categoryId);
+          categories.push(c);
+        }
+
+        return categories;
+      };
+
+      // eslint-disable-next-line require-atomic-updates
+      productRepo.inclusionResolvers = new Map<string, InclusionResolver>();
+      productRepo.inclusionResolvers.set('category', resolver);
+
+      const productWithCategories = await includeRelatedModels(
+        productRepo,
+        [product],
+        {
+          include: [{relation: 'category'}],
+        },
+      );
+
+      expect(toJSON(productWithCategories)).to.deepEqual([
+        {...toJSON(product), category: toJSON(category)},
+      ]);
+    });
   });
 
   /******************* HELPERS *******************/
@@ -179,7 +221,7 @@ describe('relation helpers', () => {
     id: number;
     @property()
     name: string;
-    @property()
+    @belongsTo(() => Category)
     categoryId: number;
   }
 
@@ -187,8 +229,20 @@ describe('relation helpers', () => {
     Product,
     typeof Product.prototype.id
   > {
-    constructor(dataSource: juggler.DataSource) {
+    public readonly category: BelongsToAccessor<
+      Category,
+      typeof Product.prototype.id
+    >;
+    constructor(
+      dataSource: juggler.DataSource,
+      categoryRepo?: Getter<CategoryRepository>,
+    ) {
       super(Product, dataSource);
+      if (categoryRepo)
+        this.category = this.createBelongsToAccessorFor(
+          'category',
+          categoryRepo,
+        );
     }
   }
 
