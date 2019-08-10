@@ -134,18 +134,11 @@ describe('relation helpers', () => {
 
   describe('includeRelatedModels', () => {
     let productRepo: ProductRepository;
-    let categoryRepo: DefaultCrudRepository<
-      Category,
-      typeof Category.prototype.id,
-      CategoryRelations
-    >;
+    let categoryRepo: CategoryRepository;
 
     before(() => {
       productRepo = new ProductRepository(testdb);
-      categoryRepo = new CategoryRepository(
-        testdb,
-        Getter.fromValue(productRepo),
-      );
+      categoryRepo = new CategoryRepository(testdb, async () => productRepo);
     });
 
     beforeEach(async () => {
@@ -153,19 +146,19 @@ describe('relation helpers', () => {
       await categoryRepo.deleteAll();
     });
 
-    it('returns source model if no filter passed in', async () => {
+    it('returns source model if no filter is passed in', async () => {
       const category = await categoryRepo.create({name: 'category 1'});
       await categoryRepo.create({name: 'category 2'});
       const result = await includeRelatedModels(categoryRepo, [category]);
       expect(result).to.eql([category]);
     });
 
-    it('throws error if the target repository does not have registered relations', async () => {
+    it('throws error if the target repository does not have a registered relation', async () => {
       let errorMessage, errorCode;
       try {
         await productRepo.create({id: 1, name: 'product1', categoryId: 1});
         await includeRelatedModels(categoryRepo, [], {
-          include: [{relation: 'product'}],
+          include: [{relation: 'products'}],
         });
       } catch (error) {
         errorCode = error.code;
@@ -173,24 +166,41 @@ describe('relation helpers', () => {
       }
       expect(errorCode).to.eql('INVALID_INCLUSION_FILTER');
       expect(errorMessage).to.eql(
-        'Invalid "filter.include" entries: {"relation":"product"}',
+        'Invalid "filter.include" entries: {"relation":"products"}',
       );
     });
 
-    it('includes related model', async () => {
+    it('returns an empty array if target model if the source entity does not have any related models', async () => {
+      const category = await categoryRepo.create({name: 'category'});
+      const resolver: InclusionResolver = async entities => {
+        const c = entities[0] as Category;
+        const product: Product[] = await categoryRepo.products(c.id).find();
+        return [product];
+      };
+
+      // eslint-disable-next-line require-atomic-updates
+      categoryRepo.inclusionResolvers = new Map<string, InclusionResolver>();
+      categoryRepo.inclusionResolvers.set('products', resolver);
+
+      const categories = await includeRelatedModels(categoryRepo, [category], {
+        include: [{relation: 'products'}],
+      });
+
+      expect(categories[0].products).to.be.empty();
+    });
+
+    it('includes related model for one instance - belongsTo', async () => {
       const category = await categoryRepo.create({name: 'category'});
       const product = await productRepo.create({
         name: 'product',
         categoryId: category.id,
       });
-      const resolver: InclusionResolver = async entities => {
-        const categories: Category[] = [];
 
-        for (const entity of entities) {
-          const p = entity as Product;
-          const c = await categoryRepo.findById(p.categoryId);
-          categories.push(c);
-        }
+      const resolver: InclusionResolver = async entities => {
+        const p = entities[0] as Product;
+        const categories: Category[] = [
+          await categoryRepo.findById(p.categoryId),
+        ];
 
         return categories;
       };
@@ -209,6 +219,145 @@ describe('relation helpers', () => {
 
       expect(toJSON(productWithCategories)).to.deepEqual([
         {...toJSON(product), category: toJSON(category)},
+      ]);
+    });
+
+    it('includes related model for more than one instance - belongsTo', async () => {
+      const categoryOne = await categoryRepo.create({name: 'category 1'});
+      const productOne = await productRepo.create({
+        name: 'product 1',
+        categoryId: categoryOne.id,
+      });
+
+      const categoryTwo = await categoryRepo.create({name: 'category 2'});
+      const productTwo = await productRepo.create({
+        name: 'product 2',
+        categoryId: categoryTwo.id,
+      });
+
+      const productThree = await productRepo.create({
+        name: 'product 3',
+        categoryId: categoryTwo.id,
+      });
+
+      const resolver: InclusionResolver = async entities => {
+        const categories: Category[] = [];
+
+        for (const entity of entities) {
+          const p = entity as Product;
+          const c = await categoryRepo.findById(p.categoryId);
+          categories.push(c);
+        }
+
+        return categories;
+      };
+
+      // eslint-disable-next-line require-atomic-updates
+      productRepo.inclusionResolvers = new Map<string, InclusionResolver>();
+      productRepo.inclusionResolvers.set('category', resolver);
+
+      const productWithCategories = await includeRelatedModels(
+        productRepo,
+        [productOne, productTwo, productThree],
+        {
+          include: [{relation: 'category'}],
+        },
+      );
+
+      expect(toJSON(productWithCategories)).to.deepEqual([
+        {...toJSON(productOne), category: toJSON(categoryOne)},
+        {...toJSON(productTwo), category: toJSON(categoryTwo)},
+        {...toJSON(productThree), category: toJSON(categoryTwo)},
+      ]);
+    });
+
+    it('includes related models for one instance - hasMany', async () => {
+      const category = await categoryRepo.create({name: 'category'});
+      const productOne = await productRepo.create({
+        name: 'product 1',
+        categoryId: category.id,
+      });
+
+      const productTwo = await productRepo.create({
+        name: 'product 2',
+        categoryId: category.id,
+      });
+
+      const resolver: InclusionResolver = async entities => {
+        let products: Product[] = [];
+
+        for (const entity of entities) {
+          const c = entity as Category;
+          products = await categoryRepo.products(c.id).find();
+        }
+        return [products];
+      };
+
+      // eslint-disable-next-line require-atomic-updates
+      categoryRepo.inclusionResolvers = new Map<string, InclusionResolver>();
+      categoryRepo.inclusionResolvers.set('products', resolver);
+
+      const categoryWithProducts = await includeRelatedModels(
+        categoryRepo,
+        [category],
+        {include: [{relation: 'products'}]},
+      );
+
+      expect(toJSON(categoryWithProducts)).to.deepEqual([
+        {
+          ...toJSON(category),
+          products: [toJSON(productOne), toJSON(productTwo)],
+        },
+      ]);
+    });
+
+    it('includes related models for more than one instance - hasMany', async () => {
+      const categoryOne = await categoryRepo.create({name: 'category 1'});
+      const productOne = await productRepo.create({
+        name: 'product 1',
+        categoryId: categoryOne.id,
+      });
+
+      const categoryTwo = await categoryRepo.create({name: 'category 2'});
+      const productTwo = await productRepo.create({
+        name: 'product 2',
+        categoryId: categoryTwo.id,
+      });
+
+      const categoryThree = await categoryRepo.create({name: 'category 3'});
+      const productThree = await productRepo.create({
+        name: 'product 3',
+        categoryId: categoryTwo.id,
+      });
+
+      const resolver: InclusionResolver = async entities => {
+        const products: Product[][] = [];
+
+        for (const entity of entities) {
+          const c = entity as Category;
+          const p = await categoryRepo.products(c.id).find();
+          products.push(p);
+        }
+        return products;
+      };
+
+      // eslint-disable-next-line require-atomic-updates
+      categoryRepo.inclusionResolvers = new Map<string, InclusionResolver>();
+      categoryRepo.inclusionResolvers.set('products', resolver);
+
+      const categoryWithProducts = await includeRelatedModels(
+        categoryRepo,
+        [categoryOne, categoryTwo, categoryThree],
+        {include: [{relation: 'products'}]},
+      );
+
+      expect(toJSON(categoryWithProducts)).to.deepEqual([
+        {...toJSON(categoryOne), products: [toJSON(productOne)]},
+        {
+          ...toJSON(categoryTwo),
+          products: [toJSON(productTwo), toJSON(productThree)],
+        },
+        {...toJSON(categoryThree), products: []},
       ]);
     });
   });
